@@ -1,6 +1,6 @@
 @{
     RootModule           = 'sftp.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '0.2.0'
     GUID                 = 'a20b4f35-de47-4ca8-a229-928f6ec73c12'
     Author               = 'trackd'
     Copyright            = 'Copyright (c) 2026 trackd. Licensed under MIT.'
