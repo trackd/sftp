@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/sftp.ALC/sftp.ALC.csproj" />
+    <Project Path="src/sftp/sftp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/sftp.Tests/sftp.Tests.csproj" />
+    <Project Path="tests/sftp.TestServer/sftp.TestServer.csproj" />
+  </Folder>
+</Solution>

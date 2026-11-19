@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+output/
+artifacts/
+.tools/
+**/TestResults/
+
+# Local notes and managed worktrees.
+/.local/
+/.worktrees/

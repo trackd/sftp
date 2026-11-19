@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>14.0</LangVersion>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <AnalysisLevel>latest-Recommended</AnalysisLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="sftp.Tests" />
+    <PackageReference Include="SSH.NET" Version="2026.0.1" />
+    <PackageReference Include="System.Management.Automation" Version="7.6.9" PrivateAssets="all"
+      ExcludeAssets="runtime" />
+    <ProjectReference Include="../sftp.ALC/sftp.ALC.csproj" />
+  </ItemGroup>
+</Project>
