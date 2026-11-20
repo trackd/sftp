@@ -86,3 +86,47 @@ public sealed class RemotePathTests {
         Assert.AreEqual(directory, RemotePath.GetDirectory(path));
     }
 }
+
+[TestClass]
+public sealed class RemotePathNormalizeTests {
+    [TestMethod]
+    [DataRow("/root/./foo.psd1", "/root/foo.psd1")]
+    [DataRow("/root/sub/../foo.psd1", "/root/foo.psd1")]
+    [DataRow("/root//sub///foo", "/root/sub/foo")]
+    [DataRow("/../../etc", "/etc")]
+    [DataRow("/root/.", "/root")]
+    [DataRow("/", "/")]
+    public void ResolvesDotSegments(string path, string expected) =>
+        Assert.AreEqual(expected, RemotePath.Normalize(path));
+}
+
+[TestClass]
+public sealed class KeyFilesTests {
+    [TestMethod]
+    [DataRow("ssh-rsa AAAAB3NzaC1yc2E user@host", true)]
+    [DataRow("ecdsa-sha2-nistp256 AAAA user@host", true)]
+    [DataRow("---- BEGIN SSH2 PUBLIC KEY ----", true)]
+    [DataRow("-----BEGIN OPENSSH PRIVATE KEY-----", false)]
+    [DataRow("PuTTY-User-Key-File-3: ssh-ed25519", false)]
+    public void RecognisesPublicKeyText(string text, bool expected) =>
+        Assert.AreEqual(expected, KeyFiles.IsPublicKeyText(text));
+
+    [TestMethod]
+    public void FindsThePrivateKeyNextToAPublicKey() {
+        string folder = Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(folder);
+        try {
+            File.WriteAllText(Path.Join(folder, "id_rsa"), "-----BEGIN OPENSSH PRIVATE KEY-----\n");
+            File.WriteAllText(Path.Join(folder, "id_rsa.pub"), "ssh-rsa AAAA user@host\n");
+            File.WriteAllText(Path.Join(folder, "lonely.pub"), "ssh-rsa AAAA user@host\n");
+            File.WriteAllText(Path.Join(folder, "known_hosts"), "host ssh-rsa AAAA\n");
+
+            Assert.AreEqual(Path.Join(folder, "id_rsa"), KeyFiles.PrivateKeyFor(Path.Join(folder, "id_rsa.pub")));
+            Assert.IsNull(KeyFiles.PrivateKeyFor(Path.Join(folder, "lonely.pub")));
+            CollectionAssert.AreEqual(new[] { Path.Join(folder, "id_rsa") }, KeyFiles.PrivateKeysIn(folder).ToArray());
+        }
+        finally {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+}

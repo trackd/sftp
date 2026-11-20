@@ -16,7 +16,7 @@ Describe 'Cmdlet help' {
         Join-Path $output 'en-US/sftp.dll-Help.xml' | Should -Exist
         Join-Path $output 'lib/en-US' | Should -Not -Exist
         @(Get-ChildItem $output -Filter '*.xml' -File -Recurse).Count | Should -Be 1
-        @(Get-ChildItem (Join-Path $PSScriptRoot '../docs/en-US') -Filter '*.md').Count | Should -Be 12
+        @(Get-ChildItem (Join-Path $PSScriptRoot '../docs/en-US') -Filter '*.md').Count | Should -Be 23
         $xml = [xml](Get-Content (Join-Path $output 'en-US/sftp.dll-Help.xml') -Raw)
         $documentedNames = @($xml.SelectNodes("//*[local-name()='parameters']/*[local-name()='parameter']/*[local-name()='name']") |
             ForEach-Object InnerText)

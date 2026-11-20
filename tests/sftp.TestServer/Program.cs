@@ -12,13 +12,15 @@ internal sealed class ServerOptions {
     public string? Password { get; init; }
     public required IReadOnlyList<byte[]> AuthorizedKeys { get; init; }
     public bool PosixRename { get; init; } = true;
+    public bool StatVfs { get; init; } = true;
+    public System.Collections.Concurrent.ConcurrentDictionary<string, uint> Permissions { get; } = new(StringComparer.Ordinal);
     public required ECDsa HostKey { get; init; }
     public required byte[] HostKeyBlob { get; init; }
 }
 
 internal static class Program {
     /// <summary>
-    /// sftp.TestServer --root DIR --user NAME [--password PW] [--authorized-key FILE.pub] [--port N] [--no-posix-rename]
+    /// sftp.TestServer --root DIR --user NAME [--password PW] [--authorized-key FILE.pub] [--port N] [--no-posix-rename] [--no-statvfs]
     /// Prints one JSON line with the port and host key fingerprint, then serves until stdin closes.
     /// </summary>
     private static int Main(string[] args) {
@@ -34,7 +36,7 @@ internal static class Program {
         }
 
         if (!arguments.TryGetValue("--root", out string? root) || !arguments.TryGetValue("--user", out string? user)) {
-            Console.Error.WriteLine("Usage: sftp.TestServer --root DIR --user NAME [--password PW] [--authorized-key FILE.pub] [--port N] [--no-posix-rename]");
+            Console.Error.WriteLine("Usage: sftp.TestServer --root DIR --user NAME [--password PW] [--authorized-key FILE.pub] [--port N] [--no-posix-rename] [--no-statvfs]");
 
             return 2;
         }
@@ -63,6 +65,7 @@ internal static class Program {
             Password = arguments.GetValueOrDefault("--password"),
             AuthorizedKeys = keys,
             PosixRename = !flags.Contains("--no-posix-rename"),
+            StatVfs = !flags.Contains("--no-statvfs"),
             HostKey = hostKey,
             HostKeyBlob = hostKeyBlob,
         };

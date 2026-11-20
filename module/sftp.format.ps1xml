@@ -7,12 +7,12 @@
         <TypeName>sftp.SftpItem</TypeName>
       </ViewSelectedBy>
       <GroupBy>
-        <PropertyName>DirectoryName</PropertyName>
+        <ScriptBlock>if ($_.IsDirectory) { if ($_.Parent) { $_.Parent } else { '/' } } else { $_.DirectoryName }</ScriptBlock>
         <Label>Directory</Label>
       </GroupBy>
       <TableControl>
         <TableHeaders>
-          <TableColumnHeader><Label>Mode</Label><Width>4</Width></TableColumnHeader>
+          <TableColumnHeader><Label>UnixMode</Label><Width>10</Width></TableColumnHeader>
           <TableColumnHeader><Label>LastWriteTime</Label><Width>22</Width><Alignment>Right</Alignment></TableColumnHeader>
           <TableColumnHeader><Label>Length</Label><Width>14</Width><Alignment>Right</Alignment></TableColumnHeader>
           <TableColumnHeader><Label>Name</Label></TableColumnHeader>
@@ -20,7 +20,7 @@
         <TableRowEntries>
           <TableRowEntry>
             <TableColumnItems>
-              <TableColumnItem><ScriptBlock>if ($_.IsDirectory) { 'd' } elseif ($_.IsSymbolicLink) { 'l' } else { '-' }</ScriptBlock></TableColumnItem>
+              <TableColumnItem><PropertyName>UnixMode</PropertyName></TableColumnItem>
               <TableColumnItem><ScriptBlock>$_.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')</ScriptBlock></TableColumnItem>
               <TableColumnItem><ScriptBlock>if (-not $_.IsDirectory) { $_.Length }</ScriptBlock></TableColumnItem>
               <TableColumnItem><PropertyName>Name</PropertyName></TableColumnItem>
@@ -105,6 +105,84 @@
           </ListEntry>
         </ListEntries>
       </ListControl>
+    </View>
+    <View>
+      <Name>sftp.SshTunnel</Name>
+      <ViewSelectedBy>
+        <TypeName>sftp.SshTunnel</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Id</Label><Width>4</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Local</Label></TableColumnHeader>
+          <TableColumnHeader><Label>Remote</Label></TableColumnHeader>
+          <TableColumnHeader><Label>SessionName</Label></TableColumnHeader>
+          <TableColumnHeader><Label>IsOpen</Label><Width>6</Width></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>Id</PropertyName></TableColumnItem>
+              <TableColumnItem><ScriptBlock>'{0}:{1}' -f $_.LocalAddress, $_.LocalPort</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>'{0}:{1}' -f $_.RemoteHost, $_.RemotePort</ScriptBlock></TableColumnItem>
+              <TableColumnItem><PropertyName>SessionName</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>IsOpen</PropertyName></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>sftp.SftpPermissionInfo</Name>
+      <ViewSelectedBy>
+        <TypeName>sftp.SftpPermissionInfo</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Mode</Label><Width>10</Width></TableColumnHeader>
+          <TableColumnHeader><Label>Octal</Label><Width>5</Width></TableColumnHeader>
+          <TableColumnHeader><Label>UserId</Label><Width>6</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>GroupId</Label><Width>7</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>FullName</Label></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><PropertyName>Mode</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Octal</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>UserId</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>GroupId</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>FullName</PropertyName></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>sftp.SftpDiskSpace</Name>
+      <ViewSelectedBy>
+        <TypeName>sftp.SftpDiskSpace</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader><Label>Total(GB)</Label><Width>10</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Used(GB)</Label><Width>10</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Available(GB)</Label><Width>13</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Used%</Label><Width>6</Width><Alignment>Right</Alignment></TableColumnHeader>
+          <TableColumnHeader><Label>Path</Label></TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem><ScriptBlock>'{0:N2}' -f ($_.TotalBytes / 1GB)</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>'{0:N2}' -f ($_.UsedBytes / 1GB)</ScriptBlock></TableColumnItem>
+              <TableColumnItem><ScriptBlock>'{0:N2}' -f ($_.AvailableBytes / 1GB)</ScriptBlock></TableColumnItem>
+              <TableColumnItem><PropertyName>PercentUsed</PropertyName></TableColumnItem>
+              <TableColumnItem><PropertyName>Path</PropertyName></TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
     </View>
   </ViewDefinitions>
 </Configuration>

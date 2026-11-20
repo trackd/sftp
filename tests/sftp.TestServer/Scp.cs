@@ -19,6 +19,27 @@ internal static class Scp {
             };
         }
 
+        switch (words.FirstOrDefault()) {
+            // A few commands so Invoke-SshCommand can be tested: output, errors and exit codes.
+            case "echo":
+                return channel => {
+                    channel.Write(Encoding.UTF8.GetBytes(string.Join(' ', words.Skip(1)) + "\n"));
+                    channel.Exit(0);
+                };
+            case "fail":
+                return channel => {
+                    channel.WriteError(string.Join(' ', words.Skip(1)) + "\n");
+                    channel.Exit(1);
+                };
+            case "exit" when words.Count == 2 && uint.TryParse(words[1], out uint code):
+                return channel => channel.Exit(code);
+            case "pwd":
+                return channel => {
+                    channel.Write("/\n"u8);
+                    channel.Exit(0);
+                };
+        }
+
         if (words.Count < 2 || words[0] != "scp") {
             return null;
         }

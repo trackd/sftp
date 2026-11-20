@@ -212,7 +212,7 @@ HelpMessage: ''
 
 ### -Session
 
-The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, otherwise the most recent connection.
+The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, then the session of the Sftp drive in the path or of the current location, otherwise the most recent connection.
 
 ```yaml
 Type: sftp.SftpSession
@@ -266,7 +266,7 @@ Folders on the server.
 
 ### sftp.SftpItem
 
-A file or folder on the server.
+Files are sftp.SftpFileInfo and folders sftp.SftpDirectoryInfo, with the same properties as local files and folders where SFTP has the information: Name, FullName, Extension, LastWriteTime, LastAccessTime, CreationTime (the modification time, as SFTP does not report creation), Attributes, Mode and UnixMode. Files add Length, BaseName, DirectoryName and IsReadOnly; folders add Parent and Root.
 
 ## NOTES
 

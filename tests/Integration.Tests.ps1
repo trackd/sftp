@@ -298,9 +298,7 @@ Describe 'Choosing how to check the host key' -Tag Integration {
             Should -Throw -ErrorId 'HostKeyMismatch,sftp.Commands.ConnectSftpServerCommand'
     }
 
-    It 'Requires exactly one way of checking the host key' {
-        { Connect-SftpServer @server -Credential $credential -ErrorAction Stop } |
-            Should -Throw -ErrorId 'HostKeyCheckRequired,sftp.Commands.ConnectSftpServerCommand'
+    It 'Refuses more than one way of checking the host key' {
         { Connect-SftpServer @server -Credential $credential -HostKeyFingerprint $hostKey.Fingerprint -SkipHostKeyCheck -ErrorAction Stop } |
             Should -Throw -ErrorId 'HostKeyCheckRequired,sftp.Commands.ConnectSftpServerCommand'
     }
@@ -475,5 +473,240 @@ Describe 'Sessions' -Tag Integration -Skip:$external {
         finally {
             $shell.Dispose()
         }
+    }
+}
+
+Describe 'Sensible defaults' -Tag Integration -Skip:$external {
+    BeforeAll {
+        $fileSystem = Get-PSProvider FileSystem
+        $originalHome = $fileSystem.Home
+        $originalHomeVariable = $env:HOME
+        $fakeHome = Join-Path $TestDrive 'home'
+        $null = New-Item -ItemType Directory -Path (Join-Path $fakeHome '.ssh') -Force
+        Copy-Item -LiteralPath $testServer.KeyFile -Destination (Join-Path $fakeHome '.ssh/id_ecdsa')
+        Copy-Item -LiteralPath "$($testServer.KeyFile).pub" -Destination (Join-Path $fakeHome '.ssh/id_ecdsa.pub')
+        $fileSystem.Home = $fakeHome
+        $env:HOME = $fakeHome
+    }
+
+    AfterAll {
+        $fileSystem.Home = $originalHome
+        $env:HOME = $originalHomeVariable
+        Get-SftpSession -Name 'defaults*' -ErrorAction SilentlyContinue | Disconnect-SftpServer
+    }
+
+    It 'Logs in with the default key and remembers the host in ~/.ssh/known_hosts' {
+        $session = Connect-SftpServer -HostName $server.HostName -Port $server.Port -UserName $testServer.UserName -Name defaults1 -WarningAction SilentlyContinue
+        $session.IsConnected | Should -BeTrue
+        $session.HostKeyVerification | Should -Be 'KnownHostsAdded'
+        Join-Path $fakeHome '.ssh/known_hosts' | Should -Exist
+        Disconnect-SftpServer -Session $session
+
+        $again = Connect-SftpServer -HostName $server.HostName -Port $server.Port -UserName $testServer.UserName -Name defaults2
+        $again.HostKeyVerification | Should -Be 'KnownHosts'
+        Disconnect-SftpServer -Session $again
+    }
+
+    It 'Uses the private key next to a .pub file' {
+        $session = Connect-SftpServer -HostName $server.HostName -Port $server.Port -UserName $testServer.UserName -KeyFile ~/.ssh/id_ecdsa.pub -Name defaults3
+        $session.IsConnected | Should -BeTrue
+        Disconnect-SftpServer -Session $session
+    }
+
+    It 'Completes -KeyFile with the keys in ~/.ssh and -Session with open sessions' {
+        $session = Connect-SftpServer -HostName $server.HostName -Port $server.Port -UserName $testServer.UserName -Name defaults4
+        $keys = (TabExpansion2 -inputScript 'Connect-SftpServer -KeyFile ' -cursorColumn 'Connect-SftpServer -KeyFile '.Length).CompletionMatches.CompletionText
+        $keys | Should -Contain '~/.ssh/id_ecdsa'
+        $keys | Should -Not -Contain '~/.ssh/id_ecdsa.pub'
+        $sessions = (TabExpansion2 -inputScript 'Get-SftpFile -Session def' -cursorColumn 'Get-SftpFile -Session def'.Length).CompletionMatches.CompletionText
+        $sessions | Should -Contain 'defaults4'
+        Disconnect-SftpServer -Session $session
+    }
+
+    Context 'Destinations' {
+        BeforeAll {
+            $session = Connect-SftpServer -HostName $server.HostName -Port $server.Port -UserName $testServer.UserName -Name defaults5
+            $dir = "/upload/dest-" + [guid]::NewGuid().ToString('n').Substring(0, 8)
+            $null = New-SftpDirectory -Path $dir
+            $localFile = Join-Path $TestDrive 'dest.txt'
+            'destination' | Set-Content -LiteralPath $localFile
+        }
+
+        AfterAll {
+            Disconnect-SftpServer -Session $session
+        }
+
+        It 'Uploads to the home folder when -Destination is omitted' {
+            $result = Send-SftpFile -LiteralPath $localFile -Force
+            $result.RemotePath | Should -Be '/dest.txt'
+            Remove-SftpFile -LiteralPath '/dest.txt'
+        }
+
+        It 'Reports clean paths for ., .. and ~' {
+            (Send-SftpFile -LiteralPath $localFile -Destination "$dir/./sub/.." -Force).RemotePath | Should -Be "$dir/dest.txt"
+            (Send-SftpFile -LiteralPath $localFile -Destination "~$dir/" -Force).RemotePath | Should -Be "$dir/dest.txt"
+        }
+
+        It 'Treats a destination that is not a folder as the new file name' {
+            (Send-SftpFile -LiteralPath $localFile -Destination "$dir/renamed.txt").RemotePath | Should -Be "$dir/renamed.txt"
+            (Get-SftpFile -LiteralPath "$dir/renamed.txt").Name | Should -Be 'renamed.txt'
+        }
+
+        It 'Downloads to the current folder, or to a new local file name' {
+            $local = Join-Path $TestDrive 'here'
+            $null = New-Item -ItemType Directory -Path $local
+            Push-Location -LiteralPath $local
+            try {
+                (Receive-SftpFile -Path "$dir/renamed.txt").LocalPath | Should -Be (Join-Path $local 'renamed.txt')
+            }
+            finally {
+                Pop-Location
+            }
+            (Receive-SftpFile -Path "$dir/renamed.txt" -Destination (Join-Path $local 'copy.txt')).LocalPath | Should -Be (Join-Path $local 'copy.txt')
+            Get-Content -LiteralPath (Join-Path $local 'copy.txt') | Should -Be 'destination'
+        }
+
+        It 'Reports a missing local folder' {
+            $result = Receive-SftpFile -Path "$dir/renamed.txt" -Destination (Join-Path $TestDrive 'nope/x.txt') -ErrorAction SilentlyContinue -ErrorVariable downloadError
+            $result.Success | Should -BeFalse
+            $downloadError[0].CategoryInfo.Category | Should -Be 'ObjectNotFound'
+        }
+    }
+}
+
+Describe 'Working like OpenSSH sftp' -Tag Integration -Skip:$external {
+    BeforeAll {
+        $fileSystem = Get-PSProvider FileSystem
+        $originalHome = $fileSystem.Home
+        $originalHomeVariable = $env:HOME
+        $fakeHome = Join-Path $TestDrive 'openssh-home'
+        $ssh = Join-Path $fakeHome '.ssh'
+        $null = New-Item -ItemType Directory -Path $ssh -Force
+        Copy-Item -LiteralPath $testServer.KeyFile -Destination (Join-Path $ssh 'testbox_key')
+        Copy-Item -LiteralPath $testServer.KeyFile -Destination (Join-Path $ssh 'id_ecdsa')
+        Set-Content -LiteralPath (Join-Path $ssh 'config') -Value @"
+Host testbox
+    HostName $($server.HostName)
+    Port $($server.Port)
+    User $($testServer.UserName)
+    IdentityFile ~/.ssh/testbox_key
+    IdentitiesOnly yes
+    UserKnownHostsFile ~/.ssh/known_hosts_testbox
+
+Host strictbox
+    HostName $($server.HostName)
+    Port $($server.Port)
+    User $($testServer.UserName)
+    StrictHostKeyChecking yes
+    UserKnownHostsFile ~/.ssh/known_hosts_empty
+"@
+        $fileSystem.Home = $fakeHome
+        $env:HOME = $fakeHome
+    }
+
+    AfterAll {
+        Get-SftpSession -Name 'openssh*' -ErrorAction SilentlyContinue | Disconnect-SftpServer
+        $fileSystem.Home = $originalHome
+        $env:HOME = $originalHomeVariable
+    }
+
+    It 'Connects through a Host alias in ~/.ssh/config' {
+        $session = Connect-SftpServer testbox -Name openssh1 -WarningAction SilentlyContinue
+        $session.HostName | Should -Be $server.HostName
+        $session.Port | Should -Be $server.Port
+        $session.UserName | Should -Be $testServer.UserName
+        Join-Path $ssh 'known_hosts_testbox' | Should -Exist
+        Disconnect-SftpServer -Session $session
+    }
+
+    It 'Takes the user from user@host' {
+        $session = Connect-SftpServer "$($testServer.UserName)@$($server.HostName)" -Port $server.Port -Name openssh2 -WarningAction SilentlyContinue
+        $session.UserName | Should -Be $testServer.UserName
+        Disconnect-SftpServer -Session $session
+    }
+
+    It 'Lets typed parameters override the config' {
+        { Connect-SftpServer testbox -UserName nobody -Name openssh3 -ErrorAction Stop } |
+            Should -Throw -ErrorId 'AuthenticationFailed,sftp.Commands.ConnectSftpServerCommand'
+    }
+
+    It 'Refuses unknown hosts with StrictHostKeyChecking yes' {
+        { Connect-SftpServer strictbox -Name openssh4 -ErrorAction Stop } |
+            Should -Throw -ErrorId 'HostKeyMismatch,sftp.Commands.ConnectSftpServerCommand'
+        Join-Path $ssh 'known_hosts_empty' | Should -Not -Exist
+    }
+
+    It 'Completes host names from ~/.ssh/config, keeping a typed user@' {
+        $line = 'Connect-SftpServer -HostName test'
+        (TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches.CompletionText | Should -Contain 'testbox'
+        $line = 'Connect-SftpServer root@str'
+        (TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches.CompletionText | Should -Contain 'root@strictbox'
+    }
+
+    It 'Completes remote paths from the server' {
+        $session = Connect-SftpServer testbox -Name openssh5 -WarningAction SilentlyContinue
+        $line = 'Get-SftpFile -Session openssh5 -Path /up'
+        (TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches.CompletionText | Should -Contain '/upload/'
+        $line = 'Send-SftpFile ./x -Destination ~/up'
+        (TabExpansion2 -inputScript $line -cursorColumn $line.Length).CompletionMatches.CompletionText | Should -Contain '~/upload/'
+        Disconnect-SftpServer -Session $session
+    }
+}
+
+Describe 'Folders, contents and commands' -Tag Integration {
+    BeforeAll {
+        $base = "$remote/more-" + [guid]::NewGuid().ToString('n').Substring(0, 8)
+        $null = New-SftpDirectory -Session $session -Path $base
+        $tree = Join-Path $TestDrive 'tree'
+        $null = New-Item -ItemType Directory -Path (Join-Path $tree 'a/b') -Force
+        'top' | Set-Content -LiteralPath (Join-Path $tree 'top.txt')
+        'deep' | Set-Content -LiteralPath (Join-Path $tree 'a/b/deep.txt')
+    }
+
+    It 'Uploads and downloads folder trees with -Recurse' {
+        $up = Send-SftpFile -Session $session -LiteralPath $tree -Destination $base -Recurse
+        @($up | Where-Object Success).Count | Should -Be 2
+        (Get-SftpFile -Session $session -LiteralPath "$base/tree/a/b/deep.txt").Name | Should -Be 'deep.txt'
+
+        $copy = Join-Path $TestDrive 'copy'
+        $down = Receive-SftpFile -Session $session -LiteralPath "$base/tree" -Destination $copy -Recurse
+        @($down | Where-Object Success).Count | Should -Be 2
+        Get-Content -LiteralPath (Join-Path $copy 'a/b/deep.txt') | Should -Be 'deep'
+        Get-Content -LiteralPath (Join-Path $copy 'top.txt') | Should -Be 'top'
+    }
+
+    It 'Explains that folders need -Recurse' {
+        $result = Send-SftpFile -Session $session -LiteralPath $tree -Destination $base -ErrorAction SilentlyContinue
+        $result.Error | Should -BeLike '*-Recurse*'
+    }
+
+    It 'Tests whether paths exist' {
+        Test-SftpPath -Session $session -Path "$base/tree" | Should -BeTrue
+        Test-SftpPath -Session $session -Path "$base/nothing" | Should -BeFalse
+        Test-SftpPath -Session $session -Path "$base/tree" -PathType Leaf | Should -BeFalse
+        Test-SftpPath -Session $session -Path "$base/tree/*.txt" -PathType Leaf | Should -BeTrue
+    }
+
+    It 'Writes and reads text files' {
+        'one', 'two' | Set-SftpContent -Session $session -Path "$base/notes.txt"
+        Get-SftpContent -Session $session -Path "$base/notes.txt" | Should -Be @('one', 'two')
+        'three' | Set-SftpContent -Session $session -Path "$base/notes.txt" -Append
+        Get-SftpContent -Session $session -Path "$base/notes.txt" -Raw | Should -BeExactly "one`ntwo`nthree`n"
+        (Get-SftpFile -Session $session -Path "$base/*.txt" | Get-SftpContent) | Should -Be @('one', 'two', 'three')
+    }
+
+    It 'Runs commands and reports output, errors and exit codes' {
+        $ok = Invoke-SshCommand -Session $session -Command 'echo hello world'
+        $ok.Output | Should -BeExactly "hello world`n"
+        $ok.ExitStatus | Should -Be 0
+        $ok.Success | Should -BeTrue
+
+        $bad = Invoke-SshCommand -Session $session -Command 'fail broken thing' -ErrorAction SilentlyContinue -ErrorVariable commandError
+        $bad.Success | Should -BeFalse
+        $bad.ExitStatus | Should -Be 1
+        $bad.Error | Should -BeLike 'broken thing*'
+        $commandError[0].FullyQualifiedErrorId | Should -Be 'CommandFailed,sftp.Commands.InvokeSshCommandCommand'
+
+        (('echo a', 'exit 3', 'pwd') | Invoke-SshCommand -Session $session -ErrorAction SilentlyContinue).ExitStatus | Should -Be @(0, 3, 0)
     }
 }

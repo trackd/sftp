@@ -20,14 +20,14 @@ Uploads files with SCP.
 ### Path (Default)
 
 ```
-Send-ScpFile [-Path] <string[]> [-Destination] <string> [-Session <SftpSession>] [-WhatIf]
+Send-ScpFile [-Path] <string[]> [[-Destination] <string>] [-Session <SftpSession>] [-WhatIf]
  [-Confirm] [<CommonParameters>]
 ```
 
 ### LiteralPath
 
 ```
-Send-ScpFile [-Destination] <string> -LiteralPath <string[]> [-SessionName <string>]
+Send-ScpFile [[-Destination] <string>] -LiteralPath <string[]> [-SessionName <string>]
  [-Session <SftpSession>] [-WhatIf] [-Confirm] [<CommonParameters>]
 ```
 
@@ -66,7 +66,7 @@ Send-ScpFile -Path ./ToSftp/a.csv, ./ToSftp/b.csv -Destination /upload -ErrorAct
 
 ### -Destination
 
-The folder on the server to upload to.
+Where to upload on the server: an existing folder, or a new file name when you upload one file. The default is your home folder, or the current folder when your location is on an Sftp drive of the same session (after Set-Location prod:\upload).
 
 ```yaml
 Type: System.String
@@ -76,7 +76,7 @@ Aliases: []
 ParameterSets:
 - Name: (All)
   Position: 1
-  IsRequired: true
+  IsRequired: false
   ValueFromPipeline: false
   ValueFromPipelineByPropertyName: false
   ValueFromRemainingArguments: false
@@ -132,7 +132,7 @@ HelpMessage: ''
 
 ### -Session
 
-The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, otherwise the most recent connection.
+The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, then the session of the Sftp drive in the path or of the current location, otherwise the most recent connection.
 
 ```yaml
 Type: sftp.SftpSession

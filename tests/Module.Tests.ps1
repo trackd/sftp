@@ -19,8 +19,8 @@ BeforeAll {
 
 Describe 'Module exports and packaging' {
     It 'Exports exactly the documented cmdlets' {
-        (Test-ModuleManifest $manifestPath).ExportedCmdlets.Count | Should -Be 12
-        @(Get-Command -Module sftp -CommandType Cmdlet).Count | Should -Be 12
+        (Test-ModuleManifest $manifestPath).ExportedCmdlets.Count | Should -Be 23
+        @(Get-Command -Module sftp -CommandType Cmdlet).Count | Should -Be 23
     }
 
     It 'Exports <CommandName> through the private assembly context' -ForEach $commandCases {
@@ -89,8 +89,25 @@ Describe 'Module exports and packaging' {
     }
 
     It 'Supports WhatIf on every command that changes files' {
-        foreach ($name in 'Send-SftpFile', 'Receive-SftpFile', 'Move-SftpFile', 'Remove-SftpFile', 'New-SftpDirectory', 'Send-ScpFile', 'Receive-ScpFile') {
+        foreach ($name in 'Send-SftpFile', 'Receive-SftpFile', 'Move-SftpFile', 'Remove-SftpFile', 'New-SftpDirectory', 'Send-ScpFile', 'Receive-ScpFile', 'Set-SftpPermission', 'Sync-SftpFolder', 'New-SshTunnel', 'Remove-SshTunnel') {
             (Get-Command "sftp\$name").Parameters.Keys | Should -Contain 'WhatIf' -Because "$name changes files"
+        }
+    }
+
+    It 'Provides the Sftp drive provider from the private assembly context' {
+        $provider = Get-PSProvider -PSProvider Sftp
+        $provider.Capabilities.HasFlag([System.Management.Automation.Provider.ProviderCapabilities]::Filter) | Should -BeTrue
+        [Runtime.Loader.AssemblyLoadContext]::GetLoadContext($provider.ImplementingType.Assembly).Name | Should -BeExactly 'sftp'
+    }
+
+    It 'Lets Send-SftpFile and Receive-SftpFile connect for one command' {
+        foreach ($name in 'Send-SftpFile', 'Receive-SftpFile') {
+            $parameters = (Get-Command "sftp\$name").Parameters
+            foreach ($connection in 'HostName', 'Port', 'Credential', 'UserName', 'KeyFile', 'KeyPassphrase', 'HostKeyFingerprint', 'KnownHostsFile', 'SkipHostKeyCheck') {
+                $parameters.Keys | Should -Contain $connection -Because "$name -$connection connects for one command"
+                $parameters[$connection].ParameterSets.Values.IsMandatory | Should -Not -Contain $true
+            }
+            [IDisposable].IsAssignableFrom((Get-Command "sftp\$name").ImplementingType) | Should -BeTrue -Because 'the one-shot session is closed in Dispose'
         }
     }
 
@@ -106,10 +123,21 @@ Describe 'Argument validation without a server' {
     BeforeAll {
         $password = ConvertTo-SecureString 'not-used' -AsPlainText -Force
         $credential = [pscredential]::new('user', $password)
+        # An empty home folder, so the user's own ~/.ssh keys and known_hosts are never used.
+        $fileSystem = Get-PSProvider FileSystem
+        $originalHome = $fileSystem.Home
+        $originalHomeVariable = $env:HOME
+        $fileSystem.Home = $TestDrive
+        $env:HOME = $TestDrive
     }
 
-    It 'Requires a host key check before connecting' {
-        { Connect-SftpServer -HostName 192.0.2.1 -Credential $credential -ErrorAction Stop } |
+    AfterAll {
+        $fileSystem.Home = $originalHome
+        $env:HOME = $originalHomeVariable
+    }
+
+    It 'Refuses more than one host key option' {
+        { Connect-SftpServer -HostName 192.0.2.1 -Credential $credential -HostKeyFingerprint ('SHA256:' + 'A' * 43) -SkipHostKeyCheck -ErrorAction Stop } |
             Should -Throw -ErrorId 'HostKeyCheckRequired,sftp.Commands.ConnectSftpServerCommand'
     }
 
@@ -118,14 +146,27 @@ Describe 'Argument validation without a server' {
             Should -Throw -ErrorId 'InvalidHostKeyFingerprint,sftp.Commands.ConnectSftpServerCommand'
     }
 
-    It 'Requires a password or a key' {
+    It 'Requires a password or a key when ~/.ssh has none' {
         { Connect-SftpServer -HostName 192.0.2.1 -UserName user -HostKeyFingerprint ('SHA256:' + 'A' * 43) -ErrorAction Stop } |
             Should -Throw -ErrorId 'MissingAuthentication,sftp.Commands.ConnectSftpServerCommand'
     }
 
     It 'Reports a missing key file' {
         { Connect-SftpServer -HostName 192.0.2.1 -UserName user -KeyFile (Join-Path $TestDrive 'missing') -HostKeyFingerprint ('SHA256:' + 'A' * 43) -ErrorAction Stop } |
-            Should -Throw -ErrorId 'MissingAuthentication,sftp.Commands.ConnectSftpServerCommand'
+            Should -Throw -ErrorId 'InvalidKeyFile,sftp.Commands.ConnectSftpServerCommand'
+    }
+
+    It 'Explains that a .pub file is a public key' {
+        $public = Join-Path $TestDrive 'lonely.pub'
+        Set-Content -LiteralPath $public -Value 'ssh-rsa AAAAB3NzaC1yc2E user@host'
+        { Connect-SftpServer -HostName 192.0.2.1 -UserName user -KeyFile $public -HostKeyFingerprint ('SHA256:' + 'A' * 43) -ErrorAction Stop } |
+            Should -Throw '*is a public key*'
+    }
+
+    It 'Makes -Destination optional' {
+        foreach ($name in 'Send-SftpFile', 'Receive-SftpFile', 'Send-ScpFile', 'Receive-ScpFile') {
+            (Get-Command "sftp\$name").Parameters['Destination'].ParameterSets.Values.IsMandatory | Should -Not -Contain $true
+        }
     }
 
     It 'Reports an unreachable server as a non-terminating error' {
