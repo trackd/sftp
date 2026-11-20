@@ -9,6 +9,7 @@
     CompatiblePSEditions = @('Core')
     FunctionsToExport    = @()
     FormatsToProcess     = @('sftp.format.ps1xml')
+    TypesToProcess       = @('sftp.types.ps1xml')
     CmdletsToExport      = @(
         'Connect-SftpServer'
         'Disconnect-SftpServer'
@@ -22,6 +23,17 @@
         'New-SftpDirectory'
         'Send-ScpFile'
         'Receive-ScpFile'
+        'Test-SftpPath'
+        'Get-SftpContent'
+        'Set-SftpContent'
+        'Invoke-SshCommand'
+        'New-SshTunnel'
+        'Get-SshTunnel'
+        'Remove-SshTunnel'
+        'Get-SftpPermission'
+        'Set-SftpPermission'
+        'Get-SftpDiskSpace'
+        'Sync-SftpFolder'
     )
     AliasesToExport      = @()
     VariablesToExport    = @()

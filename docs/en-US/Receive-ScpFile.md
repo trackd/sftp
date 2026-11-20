@@ -20,7 +20,7 @@ Downloads files with SCP.
 ### __AllParameterSets
 
 ```
-Receive-ScpFile [-Path] <string[]> [-Destination] <string> [-SessionName <string>] [-Force]
+Receive-ScpFile [-Path] <string[]> [[-Destination] <string>] [-SessionName <string>] [-Force]
  [-Session <SftpSession>] [-WhatIf] [-Confirm] [<CommonParameters>]
 ```
 
@@ -58,7 +58,7 @@ Receive-ScpFile -Path /reports/sales.csv, /reports/stock.csv -Destination ./From
 
 ### -Destination
 
-The folder on your computer to download to. It must already exist.
+Where to download: an existing folder on your computer, or a new file name when you download one file. The default is the current folder.
 
 ```yaml
 Type: System.String
@@ -68,7 +68,7 @@ Aliases: []
 ParameterSets:
 - Name: (All)
   Position: 1
-  IsRequired: true
+  IsRequired: false
   ValueFromPipeline: false
   ValueFromPipelineByPropertyName: false
   ValueFromRemainingArguments: false
@@ -124,7 +124,7 @@ HelpMessage: ''
 
 ### -Session
 
-The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, otherwise the most recent connection.
+The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, then the session of the Sftp drive in the path or of the current location, otherwise the most recent connection.
 
 ```yaml
 Type: sftp.SftpSession

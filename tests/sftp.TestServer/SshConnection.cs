@@ -408,6 +408,62 @@ internal sealed class SshConnection : IDisposable {
 
     // ---------------------------------------------------------------- channels
 
+    /// <summary>Local port forwarding (ssh -L): connects to the requested host and port and relays the channel to it.</summary>
+    private void OpenForward(SshReader reader, uint peer, uint window, uint maxPacket) {
+        string host = reader.ReadString();
+        uint port = reader.ReadUInt32();
+        var tcp = new TcpClient();
+        try {
+            tcp.Connect(host, (int)port);
+        }
+        catch (SocketException error) {
+            tcp.Dispose();
+            SendPacket(new SshWriter().Byte(SshMessage.ChannelOpenFailure).UInt32(peer).UInt32(2).String(error.Message).String("").ToArray());
+
+            return;
+        }
+
+        uint id = _nextChannel++;
+        var channel = new Channel(this, id, peer, window, Math.Min(maxPacket, MaxPacket), InitialWindow);
+        _channels[id] = channel;
+        SendPacket(new SshWriter().Byte(SshMessage.ChannelOpenConfirmation).UInt32(peer).UInt32(id).UInt32(InitialWindow).UInt32(MaxPacket).ToArray());
+        channel.Start(_ => Relay(channel, tcp));
+    }
+
+    private static void Relay(Channel channel, TcpClient tcp) {
+        using (tcp) {
+            NetworkStream network = tcp.GetStream();
+            var toTarget = new Thread(() => {
+                byte[] buffer = new byte[32 * 1024];
+                try {
+                    int read;
+                    while ((read = channel.Input.Read(buffer)) > 0) {
+                        network.Write(buffer, 0, read);
+                    }
+
+                    tcp.Client.Shutdown(SocketShutdown.Send);
+                }
+                catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException) {
+                    // Either side went away.
+                }
+            }) { IsBackground = true, Name = "forward " + channel.Id };
+            toTarget.Start();
+            byte[] buffer = new byte[32 * 1024];
+            try {
+                int read;
+                while ((read = network.Read(buffer)) > 0) {
+                    channel.Write(buffer.AsSpan(0, read));
+                }
+            }
+            catch (Exception error) when (error is IOException or SocketException) {
+                // The target closed the connection.
+            }
+
+            channel.End();
+            toTarget.Join(TimeSpan.FromSeconds(5));
+        }
+    }
+
     private bool HandleChannelMessage(byte message, SshReader reader) {
         switch (message) {
             case SshMessage.ChannelOpen: {
@@ -415,8 +471,14 @@ internal sealed class SshConnection : IDisposable {
                 uint peer = reader.ReadUInt32();
                 uint window = reader.ReadUInt32();
                 uint maxPacket = reader.ReadUInt32();
+                if (type == "direct-tcpip") {
+                    OpenForward(reader, peer, window, maxPacket);
+
+                    return true;
+                }
+
                 if (type != "session") {
-                    SendPacket(new SshWriter().Byte(SshMessage.ChannelOpenFailure).UInt32(peer).UInt32(3).String("Only session channels.").String("").ToArray());
+                    SendPacket(new SshWriter().Byte(SshMessage.ChannelOpenFailure).UInt32(peer).UInt32(3).String("Only session and direct-tcpip channels.").String("").ToArray());
 
                     return true;
                 }
@@ -463,6 +525,7 @@ internal sealed class SshConnection : IDisposable {
                 if (_channels.TryRemove(id, out Channel? channel)) {
                     channel.Input.Complete();
                     channel.Close();
+                    channel.End(eof: false);
                 }
 
                 return true;
@@ -475,13 +538,14 @@ internal sealed class SshConnection : IDisposable {
     }
 }
 
-/// <summary>A session channel with flow control in both directions.</summary>
+/// <summary>A session or direct-tcpip channel with flow control in both directions.</summary>
 internal sealed class Channel(SshConnection connection, uint id, uint peer, uint window, uint maxPacket, uint localWindow) {
     // Monitor rather than System.Threading.Lock: writers wait for window adjustments.
     private readonly object _windowLock = new();
     private uint _remoteWindow = window;
     private uint _consumed;
     private bool _closed;
+    private int _closeSent;
 
     public uint Id { get; } = id;
 
@@ -556,8 +620,24 @@ internal sealed class Channel(SshConnection connection, uint id, uint peer, uint
 
     /// <summary>Sends the exit status and closes the channel from the server side.</summary>
     public void Exit(uint status) {
+        if (Volatile.Read(ref _closeSent) != 0) {
+            return;
+        }
+
         connection.SendPacket(new SshWriter().Byte(SshMessage.ChannelRequest).UInt32(Peer).String("exit-status").Boolean(false).UInt32(status).ToArray());
-        connection.SendPacket(new SshWriter().Byte(SshMessage.ChannelEof).UInt32(Peer).ToArray());
+        End();
+    }
+
+    /// <summary>Closes the channel from the server side, once.</summary>
+    public void End(bool eof = true) {
+        if (Interlocked.Exchange(ref _closeSent, 1) != 0) {
+            return;
+        }
+
+        if (eof) {
+            connection.SendPacket(new SshWriter().Byte(SshMessage.ChannelEof).UInt32(Peer).ToArray());
+        }
+
         connection.SendPacket(new SshWriter().Byte(SshMessage.ChannelClose).UInt32(Peer).ToArray());
     }
 

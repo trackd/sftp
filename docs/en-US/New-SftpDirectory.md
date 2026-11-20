@@ -98,7 +98,7 @@ HelpMessage: ''
 
 ### -Session
 
-The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, otherwise the most recent connection.
+The session to use: the object from Connect-SftpServer, or its name. By default the session the piped files came from is used, then the session of the Sftp drive in the path or of the current location, otherwise the most recent connection.
 
 ```yaml
 Type: sftp.SftpSession

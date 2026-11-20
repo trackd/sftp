@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Types>
+  <Type>
+    <!-- Get-PSDrive shows Used and Free for file system drives; these give Sftp drives the same columns. -->
+    <Name>sftp.SftpDriveInfo</Name>
+    <Members>
+      <ScriptProperty>
+        <Name>Used</Name>
+        <GetScriptBlock>$space = $this.GetDiskSpace(); if ($space) { $space.UsedBytes }</GetScriptBlock>
+      </ScriptProperty>
+      <ScriptProperty>
+        <Name>Free</Name>
+        <GetScriptBlock>$space = $this.GetDiskSpace(); if ($space) { $space.AvailableBytes }</GetScriptBlock>
+      </ScriptProperty>
+    </Members>
+  </Type>
+</Types>

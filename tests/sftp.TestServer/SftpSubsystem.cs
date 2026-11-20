@@ -7,7 +7,7 @@ namespace sftp.TestServer;
 internal sealed class SftpSubsystem(Channel channel, ServerOptions options) {
     private const byte Init = 1, Version = 2, Open = 3, Close = 4, Read = 5, Write = 6, LStat = 7, FStat = 8, SetStat = 9, FSetStat = 10,
         OpenDir = 11, ReadDir = 12, Remove = 13, MkDir = 14, RmDir = 15, RealPath = 16, Stat = 17, Rename = 18, ReadLink = 19,
-        Extended = 200, Status = 101, Handle = 102, Data = 103, Name = 104, Attrs = 105;
+        Extended = 200, ExtendedReply = 201, Status = 101, Handle = 102, Data = 103, Name = 104, Attrs = 105;
     private const uint Ok = 0, Eof = 1, NoSuchFile = 2, PermissionDenied = 3, Failure = 4, OpUnsupported = 8;
     private const uint FlagRead = 1, FlagWrite = 2, FlagAppend = 4, FlagCreate = 8, FlagTruncate = 0x10, FlagExclusive = 0x20;
     private const uint AttrSize = 1, AttrUidGid = 2, AttrPermissions = 4, AttrTimes = 8, AttrExtended = 0x80000000;
@@ -42,6 +42,10 @@ internal sealed class SftpSubsystem(Channel channel, ServerOptions options) {
             var reply = new SshWriter().Byte(Version).UInt32(3);
             if (options.PosixRename) {
                 reply.String("posix-rename@openssh.com").String("1");
+            }
+
+            if (options.StatVfs) {
+                reply.String("statvfs@openssh.com").String("2");
             }
 
             Send(reply);
@@ -308,6 +312,20 @@ internal sealed class SftpSubsystem(Channel channel, ServerOptions options) {
             return;
         }
 
+        if (name == "statvfs@openssh.com" && options.StatVfs) {
+            string local = Map(reader.ReadString());
+            if (!Exists(local)) {
+                throw new FileNotFoundException("No such file.");
+            }
+
+            // Fixed numbers so tests can check the arithmetic: 4096-byte blocks, 1000 total, 250 free, 200 available.
+            Send(new SshWriter().Byte(ExtendedReply).UInt32(id)
+                .UInt64(4096).UInt64(4096).UInt64(1000).UInt64(250).UInt64(200)
+                .UInt64(100).UInt64(50).UInt64(40).UInt64(1).UInt64(0).UInt64(255));
+
+            return;
+        }
+
         SendStatus(id, OpUnsupported, "Unsupported extension.");
     }
 
@@ -323,7 +341,7 @@ internal sealed class SftpSubsystem(Channel channel, ServerOptions options) {
         Send(writer);
     }
 
-    private static void WriteAttributes(SshWriter writer, string? local) {
+    private void WriteAttributes(SshWriter writer, string? local) {
         if (local is null) {
             writer.UInt32(0);
 
@@ -334,7 +352,9 @@ internal sealed class SftpSubsystem(Channel channel, ServerOptions options) {
         long size = directory ? 0 : new FileInfo(local).Length;
         DateTime modified = directory ? Directory.GetLastWriteTimeUtc(local) : File.GetLastWriteTimeUtc(local);
         uint time = (uint)new DateTimeOffset(modified, TimeSpan.Zero).ToUnixTimeSeconds();
-        uint permissions = directory ? 0x4000u | 0x1EDu : 0x8000u | 0x1A4u;
+        // The host file system may not keep Unix permissions, so the server remembers what clients set.
+        uint mode = options.Permissions.TryGetValue(local, out uint stored) ? stored : directory ? 0x1EDu : 0x1A4u;
+        uint permissions = (directory ? 0x4000u : 0x8000u) | mode;
         writer.UInt32(AttrSize | AttrUidGid | AttrPermissions | AttrTimes)
             .UInt64((ulong)size)
             .UInt32(1000)
@@ -364,7 +384,7 @@ internal sealed class SftpSubsystem(Channel channel, ServerOptions options) {
         }
 
         if ((flags & AttrPermissions) != 0) {
-            reader.ReadUInt32();
+            options.Permissions[local] = reader.ReadUInt32() & 0xFFF;
         }
 
         if ((flags & AttrTimes) != 0) {

@@ -10,6 +10,8 @@ No Docker or system SSH service is needed.
 Directory the server exposes as "/". A new temporary directory by default.
 .PARAMETER NoPosixRename
 Start the server without the posix-rename@openssh.com extension, to test the rename fallback.
+.PARAMETER NoStatVfs
+Start the server without the statvfs@openssh.com extension, to test servers that cannot report disk space.
 .PARAMETER Stop
 Stop a server previously returned by this script.
 .PARAMETER Server
@@ -28,6 +30,8 @@ param(
     [string]$Root,
     [Parameter(ParameterSetName = 'Start')]
     [switch]$NoPosixRename,
+    [Parameter(ParameterSetName = 'Start')]
+    [switch]$NoStatVfs,
     [Parameter(Mandatory, ParameterSetName = 'Stop')]
     [switch]$Stop,
     [Parameter(Mandatory, ParameterSetName = 'Stop')]
@@ -73,6 +77,7 @@ foreach ($argument in @($serverDll, '--root', $Root, '--user', 'tester', '--pass
     $start.ArgumentList.Add($argument)
 }
 if ($NoPosixRename) { $start.ArgumentList.Add('--no-posix-rename') }
+if ($NoStatVfs) { $start.ArgumentList.Add('--no-statvfs') }
 $start.RedirectStandardInput = $true
 $start.RedirectStandardOutput = $true
 $start.UseShellExecute = $false
